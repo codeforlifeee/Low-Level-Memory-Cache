@@ -1,0 +1,10 @@
+build/
+build-*/
+.git/
+.github/
+.vscode/
+*.log
+*.tmp
+*.obj
+*.o
+*.exe

@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  cache_http:
+    image: ghcr.io/${GHCR_OWNER:-owner}/${GHCR_IMAGE:-mini-redis-cache}:${IMAGE_TAG:-latest}
+    container_name: mini-redis-cache
+    restart: unless-stopped
+    command: ["8080", "50000"]
+    expose:
+      - "8080"
+    networks:
+      - cache_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: mini-redis-nginx
+    restart: unless-stopped
+    depends_on:
+      - cache_http
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - cache_net
+
+networks:
+  cache_net:
+    driver: bridge

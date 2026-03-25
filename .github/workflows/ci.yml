@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: build-and-test-${{ matrix.os }}-${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            build_type: Release
+          - os: ubuntu-22.04
+            build_type: Debug
+          - os: windows-2022
+            build_type: Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+
+      - name: Benchmark smoke
+        if: matrix.os == 'ubuntu-22.04' && matrix.build_type == 'Release'
+        run: ./build/cache_benchmark
+
+  sanitize-address-ub:
+    name: sanitize-address-ub
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (ASan+UBSan)
+        run: >-
+          cmake -S . -B build-asan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g'
+
+      - name: Build (ASan+UBSan)
+        run: cmake --build build-asan --parallel
+
+      - name: Test (ASan+UBSan)
+        run: ctest --test-dir build-asan --output-on-failure
+
+  sanitize-thread:
+    name: sanitize-thread
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (TSan)
+        run: >-
+          cmake -S . -B build-tsan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer -O1 -g'
+
+      - name: Build (TSan)
+        run: cmake --build build-tsan --parallel
+
+      - name: Test (TSan)
+        run: ctest --test-dir build-tsan --output-on-failure
