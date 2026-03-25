@@ -1,0 +1,16 @@
+profile,variant,throughput_ops_sec,p99_us
+balanced,single_lock,2133650.06,125.4
+balanced,sharded_8,7317735.04,19.8
+balanced,sharded_16,8378435.3,10.5
+balanced,sharded_32,8811036.31,7.4
+balanced,sharded_64,8769440.45,5.1
+read_heavy,single_lock,2557721.01,96.9
+read_heavy,sharded_8,8005888.78,15.0
+read_heavy,sharded_16,9238159.76,9.5
+read_heavy,sharded_32,9915142.9,6.0
+read_heavy,sharded_64,9596685.94,4.2
+write_heavy,single_lock,1935581.17,107.6
+write_heavy,sharded_8,7409145.36,21.7
+write_heavy,sharded_16,7393836.83,16.5
+write_heavy,sharded_32,8824026.84,7.4
+write_heavy,sharded_64,8612059.04,5.1

@@ -1,78 +1,153 @@
-# Mini Redis: Thread-Safe In-Memory Cache (C++17)
+# Low-Level-Memory-Cache: Redis-Like In-Memory Cache Engine
 
-A resume-grade, high-concurrency cache inspired by Redis fundamentals.
+A high-throughput, low-latency, thread-safe in-memory cache system built in C++17 with multiple interfaces, benchmark evidence, and deployment workflow.
 
-## Highlights
+## Demo and Write-up
 
-- **Fine-grained concurrency:** sharded architecture with per-shard `std::shared_mutex`.
-- **Low-latency core ops:** expected O(1) `SET`, `GET`, `DEL` using hash map + doubly linked list per shard.
-- **LRU eviction:** automatic least-recently-used eviction when shard capacity is reached.
-- **TTL expiration:** user-defined key expiration with periodic background cleanup.
-- **Thundering herd protection:** request collapsing via `std::shared_future` in `get_or_compute`.
-- **Runtime monitoring:** hit/miss, hit ratio, memory usage estimate, active key count.
-- **Interface layer:** Redis-like CLI and lightweight HTTP API for command simulation.
-- **CI quality gates:** GitHub Actions matrix, Address/UB sanitizers, and ThreadSanitizer jobs.
+- Project Demo Video: [Add YouTube/Drive link here](https://example.com/your-demo-video)
+- Medium Blog Post: [Add Medium article link here](https://medium.com/@your-username/your-article)
 
-## Project Structure
+---
 
-- `include/mini_redis/sharded_cache.hpp`: core generic cache implementation.
-- `src/main.cpp`: demo usage with stats output.
-- `src/cache_cli.cpp`: interactive Redis-like CLI simulator.
-- `src/cache_http.cpp`: lightweight HTTP API wrapper around the cache.
-- `tests/cache_tests.cpp`: Google Test unit + concurrency/stress tests.
-- `benchmarks/cache_benchmark_tuned.cpp`: throughput/P99 benchmark with shard-count and workload-profile sweep.
-- `docs/benchmark_report.md`: template + interpretation notes for benchmark output.
-- `scripts/run_benchmark.ps1`: helper script to configure/build/run benchmark quickly.
-- `.github/workflows/ci.yml`: CI pipeline for tests + sanitizers.
-- `Dockerfile`, `docker-compose.yml`, `deploy/`: EC2 deployment package with rollback workflow.
+## 1. What Is This?
 
-## Build
+This project is a Redis-inspired in-memory cache designed for systems-level performance and concurrency.
 
-### Windows (MSVC or Ninja)
+Core goal:
+- Serve concurrent read/write traffic safely with predictable response behavior.
+- Keep operations fast with O(1)-style hash-map/list primitives where possible.
+- Provide measurable evidence (throughput and percentile latency) instead of claims.
+
+This is not just a key-value map. It includes:
+- concurrent sharded architecture
+- LRU eviction
+- TTL expiry
+- thundering-herd protection
+- TCP protocol server
+- HTTP API and visual dashboard
+- benchmark/graph generation
+- CI and deployment automation
+
+---
+
+## 2. Features
+
+### Concurrency and Correctness
+- 64-way sharded cache design for reduced lock contention.
+- Per-shard read/write lock strategy (`shared_mutex`) for multi-reader/single-writer behavior.
+- Request collapsing for hot-expired keys using in-flight futures to avoid duplicate compute storms.
+
+### Cache Policies
+- LRU eviction when shard capacity is exceeded.
+- TTL expiration with active checks and cleanup.
+
+### Interfaces
+- TCP server (Redis-like text commands): `SET`, `GET`, `DEL`, `STATS`, `PING`, `QUIT`.
+- HTTP server endpoints for API usage.
+- Built-in browser dashboard for visual operations and live stats.
+
+### Observability
+- Hit/miss counters and hit ratio.
+- Active keys and memory usage estimate.
+- Benchmark scripts with CSV + PNG graph output.
+
+### Engineering Workflow
+- CMake-based build.
+- Unit and concurrency tests.
+- Sanitizer jobs in CI.
+- Docker packaging and EC2 deployment workflow with rollback script.
+
+---
+
+## 3. Benchmarks (With Graphs)
+
+### A. Optimized Sharded Cache vs Single-Lock Baseline
+
+Measured from tuned benchmark output:
+- Balanced: throughput +313.0%, P99 latency -94.1%
+- Read-heavy: throughput +287.7%, P99 latency -93.8%
+- Write-heavy: throughput +355.9%, P99 latency -93.1%
+
+Artifacts:
+- [docs/graphs/optimization_comparison.png](docs/graphs/optimization_comparison.png)
+- [docs/graphs/optimization_comparison.csv](docs/graphs/optimization_comparison.csv)
+- [docs/graphs/tuned_benchmark_raw.csv](docs/graphs/tuned_benchmark_raw.csv)
+
+### B. TCP Mixed-Workload Scaling Sweep
+
+From generated concurrency sweep:
+- concurrency 10: 21,844.92 ops/sec, P99 1,040.20 us
+- concurrency 50: 19,786.86 ops/sec, P99 6,009.90 us
+- concurrency 100: 18,213.87 ops/sec, P99 12,577.00 us
+- concurrency 200: 15,472.89 ops/sec, P99 27,919.90 us
+- concurrency 500: 12,033.42 ops/sec, P99 40,874.80 us
+
+Artifacts:
+- [docs/graphs/throughput_vs_concurrency.png](docs/graphs/throughput_vs_concurrency.png)
+- [docs/graphs/latency_vs_concurrency.png](docs/graphs/latency_vs_concurrency.png)
+- [docs/graphs/concurrency_sweep.csv](docs/graphs/concurrency_sweep.csv)
+
+Interpretation:
+- Throughput degrades gracefully as concurrency rises.
+- Tail latency (P95/P99) increases at high client counts, showing realistic contention/scheduling effects.
+- No transport/protocol errors in measured runs.
+
+---
+
+## 4. Design Decisions and Trade-Offs
+
+### Why Sharding + RW Locks?
+- Single global lock is simple but becomes a bottleneck under mixed load.
+- Sharding localizes contention and allows independent progress across buckets.
+- RW locks improve read-heavy parallelism while preserving write safety.
+
+Trade-off:
+- More complex implementation than a global mutex.
+- Cross-shard global ordering is not provided by default.
+
+### Why LRU?
+- LRU approximates recency-based usefulness and is practical for many cache workloads.
+- Hash map + linked list gives efficient update/evict behavior.
+
+Trade-off:
+- Strict global LRU is expensive in a sharded design; this project uses per-shard LRU.
+
+### Why TTL?
+- Supports freshness and bounded staleness for cached items.
+- Enables safe auto-expiry for session/token-like data.
+
+Trade-off:
+- Expiry checks and cleanup add overhead.
+- Exact expiration instant can depend on access/cleanup timing.
+
+### Why Request Collapsing?
+- Prevents thundering-herd effect when many clients miss the same hot key simultaneously.
+- Ensures one compute path per key while others wait for the same result.
+
+Trade-off:
+- Additional in-flight bookkeeping.
+
+---
+
+## 5. Architecture
+
+Diagram:
+- [docs/architecture_diagram.md](docs/architecture_diagram.md)
+
+High-level flow:
+- Client -> TCP/HTTP server -> Connection handler -> Command parser -> Sharded cache core
+- Sharded core -> LRU engine, TTL engine, request-collapsing map, memory layer
+- Stats exported to API/UI
+
+---
+
+## 6. How To Run
+
+### Local Build (Windows, Visual Studio generator)
 
 ```powershell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-```
-
-### Run Demo
-
-```powershell
-./build/Release/cache_demo.exe
-```
-
-### Run CLI Simulator
-
-```powershell
-./build/Release/cache_cli.exe
-```
-
-Example commands:
-
-```text
-PING
-SET user:1 Alice 3000
-GET user:1
-DEL user:1
-STATS
-QUIT
-```
-
-### Run HTTP Simulator
-
-```powershell
-./build/Release/cache_http.exe 8080 50000
-```
-
-Example calls:
-
-```powershell
-curl "http://localhost:8080/health"
-curl -X POST "http://localhost:8080/set?key=user:1&value=Alice&ttl_ms=3000"
-curl "http://localhost:8080/get?key=user:1"
-curl -X DELETE "http://localhost:8080/del?key=user:1"
-curl "http://localhost:8080/stats"
-curl -X POST "http://localhost:8080/cmd" -d "SET k v 2000"
+cmake -S . -B build -G "Visual Studio 18 2026"
+cmake --build build --config Release --parallel
 ```
 
 ### Run Tests
@@ -81,101 +156,87 @@ curl -X POST "http://localhost:8080/cmd" -d "SET k v 2000"
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-### Run Benchmark
+### Run Tuned Benchmark
 
 ```powershell
 ./build/Release/cache_benchmark.exe
 ```
 
-Or via helper script:
+### Run HTTP UI
 
 ```powershell
-./scripts/run_benchmark.ps1
+./build/Release/cache_http.exe 8080 50000
 ```
 
-## API (Core User Actions)
+Open:
+- http://127.0.0.1:8080/
 
-### `SET(key, value, ttl)`
+### Run TCP Server
 
-```cpp
-cache.set("user:1", "Alice", std::chrono::seconds(10));
-cache.set("user:2", "Bob"); // no TTL
+```powershell
+./build/Release/cache_tcp_server.exe 6379 50000
 ```
 
-### `GET(key)`
+### Run Python TCP Benchmark
 
-```cpp
-auto value = cache.get("user:1");
+```powershell
+python .\benchmark.py --host 127.0.0.1 --port 6379 --requests 100000 --concurrency 50 --mode mixed --get-ratio 0.70 --set-ratio 0.25 --key-space 20000
 ```
 
-Returns `std::optional<Value>` and refreshes LRU on hit.
+### Generate Graph Artifacts
 
-### `DEL(key)`
-
-```cpp
-bool removed = cache.del("user:1");
+```powershell
+python .\scripts\generate_benchmark_artifacts.py --project-root . --tuned-output benchmark_output.txt --out-dir docs/graphs --run-sweep --server-exe build/Release/cache_tcp_server.exe --requests 20000 --mode mixed --get-ratio 0.70 --set-ratio 0.25 --key-space 20000 --concurrency-list 10,50,100,200,500
 ```
 
-### `STATS()`
+---
 
-```cpp
-auto stats = cache.stats();
-double ratio = stats.hit_ratio();
-```
+## 7. Deployment (AWS EC2 + Nginx + Docker)
 
-## Architecture Mapping
+Current deployment model:
+- EC2 t2.micro instance
+- Nginx reverse proxy
+- Dockerized service
+- GitHub Actions deploy workflow
+- rollback-capable release script
 
-- **API Layer:** `set`, `get`, `del`, `get_or_compute`, `stats`.
-- **Concurrency Layer:** sharded map/list with per-shard reader-writer lock.
-- **Logic Layer:** TTL checks, LRU movement, eviction, request collapsing.
-- **Storage Layer:** `std::unordered_map` + `std::list` per shard.
+Key files:
+- [deploy/README.md](deploy/README.md)
+- [Deploy_Readme.md](Deploy_Readme.md)
+- [docker-compose.yml](docker-compose.yml)
+- [Dockerfile](Dockerfile)
+- [.github/workflows/deploy-ec2.yml](.github/workflows/deploy-ec2.yml)
 
-## Resume-Ready Talking Points
+---
 
-- Implemented a C++17 sharded in-memory cache with request collapsing to eliminate thundering-herd effects.
-- Achieved concurrent 100,000+ operation stress tests across 12 threads with LRU+TTL correctness.
-- Added benchmark sweep across shard counts (8/16/32/64) and workload profiles (balanced/read-heavy/write-heavy), reporting throughput and P99 latency versus single-lock baseline.
-- Built quality gates with Google Test and clear metrics for hit ratio, memory usage, and active key count.
+## 8. Tech Stack
 
-## CI Pipeline
+- Language: C++17
+- Core concurrency: `thread`, `shared_mutex`, `atomic`, futures
+- Data structures: `unordered_map`, linked-list-based LRU
+- Build: CMake
+- Testing: GoogleTest
+- APIs: TCP sockets + cpp-httplib
+- Visualization: Python + matplotlib
+- Containerization: Docker
+- Deployment: AWS EC2 + Nginx + GitHub Actions
 
-GitHub Actions workflow in `.github/workflows/ci.yml` runs:
+---
 
-- Ubuntu Debug/Release and Windows Release build+test matrix.
-- ASan+UBSan job on Ubuntu with Clang.
-- TSan job on Ubuntu with Clang.
+## 9. Interviewer-Focused Talking Points
 
-## EC2 Deployment Package
+- Designed for lock-contention reduction using sharding and per-shard RW synchronization.
+- Implemented thundering-herd protection with in-flight request collapsing.
+- Measured and published throughput/tail-latency improvements with graph artifacts.
+- Built both protocol-level (TCP) and service-level (HTTP + UI) interfaces.
+- Containerized and deployed on EC2 with CI/CD and rollback automation.
 
-The repo includes a production-style deployment path for AWS EC2:
+---
 
-- Containerized HTTP service (`Dockerfile`)
-- Nginx reverse proxy (`deploy/nginx/default.conf`)
-- Compose stack (`docker-compose.yml`)
-- Release-based deploy+rollback script (`deploy/ec2/deploy.sh`)
-- Bootstrap helper (`deploy/ec2/bootstrap.sh`)
-- systemd unit (`deploy/systemd/mini-redis.service`)
-- GitHub Actions deploy workflow (`.github/workflows/deploy-ec2.yml`)
+## 10. Repository Proof Checklist
 
-Quick start guide: `deploy/README.md`
-
-## Validation Guidance
-
-### ThreadSanitizer (Linux/Clang)
-
-```bash
-cmake -S . -B build-tsan -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=thread -O1 -g"
-cmake --build build-tsan
-ctest --test-dir build-tsan --output-on-failure
-```
-
-### Valgrind (Linux)
-
-```bash
-valgrind --leak-check=full --show-leak-kinds=all ./build/cache_tests
-```
-
-## Notes
-
-- Memory usage is an approximate tracked estimate suitable for operational monitoring.
-- Global capacity is enforced by distributing key budget across shards; aggregate active keys never exceed configured max.
+For review/demo, include these artifacts:
+- benchmark outputs (`benchmark_output.txt`, `tcp_benchmark_output.txt`)
+- graph files in [docs/graphs](docs/graphs)
+- architecture diagram in [docs/architecture_diagram.md](docs/architecture_diagram.md)
+- deployment docs in [deploy/README.md](deploy/README.md)

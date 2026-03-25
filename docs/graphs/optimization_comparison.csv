@@ -1,0 +1,4 @@
+profile,baseline_variant,baseline_throughput_ops_sec,best_variant,best_throughput_ops_sec,baseline_p99_us,best_p99_us,throughput_gain_pct,p99_reduction_pct
+balanced,single_lock,2133650.06,sharded_32,8811036.31,125.4,7.4,312.9560172580502,94.09888357256779
+read_heavy,single_lock,2557721.01,sharded_32,9915142.9,96.9,6.0,287.65537215491696,93.80804953560371
+write_heavy,single_lock,1935581.17,sharded_32,8824026.84,107.6,7.4,355.8851355223713,93.12267657992564
