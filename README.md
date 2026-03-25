@@ -68,8 +68,19 @@ Measured from tuned benchmark output:
 - Read-heavy: throughput +287.7%, P99 latency -93.8%
 - Write-heavy: throughput +355.9%, P99 latency -93.1%
 
-Artifacts:
-- [docs/graphs/optimization_comparison.png](docs/graphs/optimization_comparison.png)
+Optimization comparison chart:
+
+![Optimization Comparison](docs/graphs/optimization_comparison.png)
+
+Visible summary (from CSV):
+
+| Profile | Baseline (single_lock) ops/sec | Best Sharded Variant | Best Sharded ops/sec | Throughput Gain | Baseline P99 (us) | Best P99 (us) | P99 Reduction |
+|---|---:|---|---:|---:|---:|---:|---:|
+| balanced | 2,133,650.06 | sharded_32 | 8,811,036.31 | 313.0% | 125.40 | 7.40 | 94.1% |
+| read_heavy | 2,557,721.01 | sharded_32 | 9,915,142.90 | 287.7% | 96.90 | 6.00 | 93.8% |
+| write_heavy | 1,935,581.17 | sharded_32 | 8,824,026.84 | 355.9% | 107.60 | 7.40 | 93.1% |
+
+CSV sources:
 - [docs/graphs/optimization_comparison.csv](docs/graphs/optimization_comparison.csv)
 - [docs/graphs/tuned_benchmark_raw.csv](docs/graphs/tuned_benchmark_raw.csv)
 
@@ -82,9 +93,25 @@ From generated concurrency sweep:
 - concurrency 200: 15,472.89 ops/sec, P99 27,919.90 us
 - concurrency 500: 12,033.42 ops/sec, P99 40,874.80 us
 
-Artifacts:
-- [docs/graphs/throughput_vs_concurrency.png](docs/graphs/throughput_vs_concurrency.png)
-- [docs/graphs/latency_vs_concurrency.png](docs/graphs/latency_vs_concurrency.png)
+Throughput chart:
+
+![Throughput vs Concurrency](docs/graphs/throughput_vs_concurrency.png)
+
+Latency percentile chart:
+
+![Latency vs Concurrency](docs/graphs/latency_vs_concurrency.png)
+
+Visible summary (from CSV):
+
+| Concurrency | Throughput (ops/sec) | P50 (us) | P95 (us) | P99 (us) |
+|---:|---:|---:|---:|---:|
+| 10 | 21,844.92 | 419.00 | 804.30 | 1,040.20 |
+| 50 | 19,786.86 | 2,251.80 | 4,752.50 | 6,009.90 |
+| 100 | 18,213.87 | 4,698.70 | 10,030.10 | 12,577.00 |
+| 200 | 15,472.89 | 9,873.70 | 22,169.70 | 27,919.90 |
+| 500 | 12,033.42 | 12,758.40 | 30,942.30 | 40,874.80 |
+
+CSV source:
 - [docs/graphs/concurrency_sweep.csv](docs/graphs/concurrency_sweep.csv)
 
 Interpretation:
@@ -131,8 +158,9 @@ Trade-off:
 
 ## 5. Architecture
 
-Diagram:
-- [docs/architecture_diagram.md](docs/architecture_diagram.md)
+Diagram - LLMC flowchart:
+
+![LLMC Flowchart](docs/graphs/LLMC_FlowChart.png)
 
 High-level flow:
 - Client -> TCP/HTTP server -> Connection handler -> Command parser -> Sharded cache core
