@@ -1,0 +1,3 @@
+SET persist:live:ccb43b3d live_value 300000
+SET persist:delete:ccb43b3d delete_me
+DEL persist:delete:ccb43b3d
