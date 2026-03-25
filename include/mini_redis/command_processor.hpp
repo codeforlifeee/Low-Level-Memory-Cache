@@ -1,13 +1,14 @@
 #pragma once
 
 #include <chrono>
-#include <cctype>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
-#include <vector>
 
+#include "mini_redis/persistence.hpp"
 #include "mini_redis/sharded_cache.hpp"
+#include "mini_redis/tcp_command_parser.hpp"
 
 namespace mini_redis {
 
@@ -17,43 +18,34 @@ struct CommandResponse {
     std::string payload;
 };
 
-inline std::string trim(const std::string& input) {
-    std::size_t start = 0;
-    while (start < input.size() && std::isspace(static_cast<unsigned char>(input[start])) != 0) {
-        ++start;
-    }
-
-    std::size_t end = input.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(input[end - 1])) != 0) {
-        --end;
-    }
-
-    return input.substr(start, end - start);
-}
-
-inline std::string to_upper(std::string value) {
-    for (char& c : value) {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return value;
-}
-
-inline std::vector<std::string> split_ws(const std::string& input) {
-    std::istringstream iss(input);
-    std::vector<std::string> parts;
-    std::string token;
-    while (iss >> token) {
-        parts.push_back(token);
-    }
-    return parts;
-}
+struct RedisProcessorOptions {
+    bool enable_persistence{true};
+    std::string aof_path{"data/appendonly.aof"};
+    std::string snapshot_path{"data/dump.rdb"};
+    std::chrono::milliseconds aof_flush_interval{1000};
+    std::size_t aof_flush_batch{256};
+    std::chrono::seconds snapshot_interval{30};
+};
 
 class RedisCommandProcessor {
 public:
     using Cache = ShardedCache<std::string, std::string, 64>;
 
-    explicit RedisCommandProcessor(std::size_t capacity)
-        : cache_(capacity, true) {}
+    explicit RedisCommandProcessor(
+        std::size_t capacity,
+        RedisProcessorOptions options = RedisProcessorOptions{})
+        : cache_(capacity, true), options_(std::move(options)) {
+        if (options_.enable_persistence) {
+            CachePersistenceManager::Config cfg;
+            cfg.enabled = true;
+            cfg.aof_path = options_.aof_path;
+            cfg.snapshot_path = options_.snapshot_path;
+            cfg.aof_flush_interval = options_.aof_flush_interval;
+            cfg.aof_flush_batch = options_.aof_flush_batch;
+            cfg.snapshot_interval = options_.snapshot_interval;
+            persistence_ = std::make_unique<CachePersistenceManager>(cache_, std::move(cfg));
+        }
+    }
 
     [[nodiscard]] Cache& cache() noexcept {
         return cache_;
@@ -63,92 +55,103 @@ public:
         return cache_;
     }
 
+    bool set(
+        const std::string& key,
+        const std::string& value,
+        std::optional<std::chrono::milliseconds> ttl = std::nullopt) {
+        const bool ok = cache_.set(key, value, ttl);
+        if (persistence_ != nullptr) {
+            persistence_->record_set(key, value, ttl);
+        }
+        return ok;
+    }
+
+    [[nodiscard]] std::optional<std::string> get(const std::string& key) {
+        return cache_.get(key);
+    }
+
+    bool del(const std::string& key) {
+        const bool deleted = cache_.del(key);
+        if (persistence_ != nullptr) {
+            persistence_->record_del(key);
+        }
+        return deleted;
+    }
+
+    [[nodiscard]] CacheStats stats() const {
+        return cache_.stats();
+    }
+
     [[nodiscard]] CommandResponse execute_line(const std::string& raw_line) {
-        const auto line = trim(raw_line);
-        if (line.empty()) {
-            return {true, false, "(empty command)"};
+        const auto parsed = parse_tcp_command(raw_line);
+        if (parsed.type == TcpCommandType::Invalid) {
+            return {false, false, "ERR " + parsed.error};
         }
-
-        const auto parts = split_ws(line);
-        if (parts.empty()) {
-            return {true, false, "(empty command)"};
-        }
-
-        const auto cmd = to_upper(parts[0]);
-
-        if (cmd == "PING") {
-            return {true, false, "PONG"};
-        }
-
-        if (cmd == "SET") {
-            if (parts.size() < 3 || parts.size() > 4) {
-                return {false, false, "ERR usage: SET <key> <value> [ttl_ms]"};
-            }
-
-            std::optional<std::chrono::milliseconds> ttl = std::nullopt;
-            if (parts.size() == 4) {
-                std::size_t pos = 0;
-                const long long ttl_ms = std::stoll(parts[3], &pos);
-                if (pos != parts[3].size() || ttl_ms < 0) {
-                    return {false, false, "ERR ttl_ms must be a non-negative integer"};
-                }
-                ttl = std::chrono::milliseconds(ttl_ms);
-            }
-
-            const bool ok = cache_.set(parts[1], parts[2], ttl);
-            return {ok, false, ok ? "OK" : "ERR set failed"};
-        }
-
-        if (cmd == "GET") {
-            if (parts.size() != 2) {
-                return {false, false, "ERR usage: GET <key>"};
-            }
-
-            const auto value = cache_.get(parts[1]);
-            if (!value.has_value()) {
-                return {true, false, "(nil)"};
-            }
-            return {true, false, *value};
-        }
-
-        if (cmd == "DEL") {
-            if (parts.size() != 2) {
-                return {false, false, "ERR usage: DEL <key>"};
-            }
-            const bool deleted = cache_.del(parts[1]);
-            return {true, false, deleted ? "1" : "0"};
-        }
-
-        if (cmd == "STATS") {
-            const auto stats = cache_.stats();
-            std::ostringstream oss;
-            oss << "hits=" << stats.hits << ' '
-                << "misses=" << stats.misses << ' '
-                << "hit_ratio=" << stats.hit_ratio() << ' '
-                << "evictions=" << stats.evictions << ' '
-                << "expirations=" << stats.expirations << ' '
-                << "active_keys=" << stats.active_keys << ' '
-                << "memory_bytes=" << stats.memory_bytes;
-            return {true, false, oss.str()};
-        }
-
-        if (cmd == "HELP") {
-            return {
-                true,
-                false,
-                "Commands: PING | SET <key> <value> [ttl_ms] | GET <key> | DEL <key> | STATS | HELP | QUIT"
-            };
-        }
-
-        if (cmd == "QUIT" || cmd == "EXIT") {
-            return {true, true, "BYE"};
-        }
-
-        return {false, false, "ERR unknown command"};
+        return execute_parsed(parsed, true);
     }
 
 private:
+    [[nodiscard]] CommandResponse execute_parsed(
+        const ParsedTcpCommand& parsed,
+        bool persist_write) {
+        switch (parsed.type) {
+            case TcpCommandType::Ping:
+                return {true, false, "PONG"};
+            case TcpCommandType::Help:
+                return {
+                    true,
+                    false,
+                    "Commands: PING | SET <key> <value> [ttl_ms] | GET <key> | DEL <key> | STATS | HELP | QUIT"
+                };
+            case TcpCommandType::Quit:
+                return {true, true, "BYE"};
+            case TcpCommandType::Set: {
+                std::optional<std::chrono::milliseconds> ttl = std::nullopt;
+                if (parsed.ttl_ms.has_value()) {
+                    ttl = std::chrono::milliseconds(parsed.ttl_ms.value());
+                }
+
+                const bool ok = cache_.set(parsed.key, parsed.value, ttl);
+                if (persist_write && persistence_ != nullptr) {
+                    persistence_->record_set(parsed.key, parsed.value, ttl);
+                }
+                return {ok, false, ok ? "OK" : "ERR set failed"};
+            }
+            case TcpCommandType::Get: {
+                const auto value = cache_.get(parsed.key);
+                if (!value.has_value()) {
+                    return {true, false, "(nil)"};
+                }
+                return {true, false, *value};
+            }
+            case TcpCommandType::Del: {
+                const bool deleted = cache_.del(parsed.key);
+                if (persist_write && persistence_ != nullptr) {
+                    persistence_->record_del(parsed.key);
+                }
+                return {true, false, deleted ? "1" : "0"};
+            }
+            case TcpCommandType::Stats: {
+                const auto s = cache_.stats();
+                std::ostringstream oss;
+                oss << "hits=" << s.hits << ' '
+                    << "misses=" << s.misses << ' '
+                    << "hit_ratio=" << s.hit_ratio() << ' '
+                    << "evictions=" << s.evictions << ' '
+                    << "expirations=" << s.expirations << ' '
+                    << "active_keys=" << s.active_keys << ' '
+                    << "memory_bytes=" << s.memory_bytes;
+                return {true, false, oss.str()};
+            }
+            case TcpCommandType::Invalid:
+            default:
+                return {false, false, "ERR unknown command"};
+        }
+    }
+
     Cache cache_;
+    RedisProcessorOptions options_;
+    std::unique_ptr<CachePersistenceManager> persistence_;
 };
 
 }  // namespace mini_redis

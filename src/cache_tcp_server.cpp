@@ -8,8 +8,7 @@
 #include <string>
 #include <thread>
 
-#include "mini_redis/sharded_cache.hpp"
-#include "mini_redis/tcp_command_parser.hpp"
+#include "mini_redis/command_processor.hpp"
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -28,8 +27,6 @@ constexpr SocketHandle kInvalidSocket = -1;
 #endif
 
 namespace {
-
-using Cache = mini_redis::ShardedCache<std::string, std::string, 64>;
 
 void close_socket(SocketHandle s) {
 #ifdef _WIN32
@@ -77,57 +74,7 @@ std::string sanitize_line(const std::string& raw) {
     return mini_redis::tcp_trim(out);
 }
 
-std::string execute_command(const mini_redis::ParsedTcpCommand& cmd, Cache& cache, bool& should_quit) {
-    using namespace std::chrono_literals;
-
-    should_quit = false;
-
-    switch (cmd.type) {
-        case mini_redis::TcpCommandType::Ping:
-            return "OK";
-        case mini_redis::TcpCommandType::Help:
-            return "OK commands: SET GET DEL STATS PING QUIT";
-        case mini_redis::TcpCommandType::Quit:
-            should_quit = true;
-            return "OK";
-        case mini_redis::TcpCommandType::Set: {
-            std::optional<std::chrono::milliseconds> ttl = std::nullopt;
-            if (cmd.ttl_ms.has_value()) {
-                ttl = std::chrono::milliseconds(cmd.ttl_ms.value());
-            }
-            const bool ok = cache.set(cmd.key, cmd.value, ttl);
-            return ok ? "OK" : "ERROR set failed";
-        }
-        case mini_redis::TcpCommandType::Get: {
-            const auto value = cache.get(cmd.key);
-            if (!value.has_value()) {
-                return "(nil)";
-            }
-            return *value;
-        }
-        case mini_redis::TcpCommandType::Del: {
-            const bool removed = cache.del(cmd.key);
-            return removed ? "OK" : "(nil)";
-        }
-        case mini_redis::TcpCommandType::Stats: {
-            const auto s = cache.stats();
-            std::ostringstream oss;
-            oss << "OK hits=" << s.hits
-                << " misses=" << s.misses
-                << " hit_ratio=" << s.hit_ratio()
-                << " evictions=" << s.evictions
-                << " expirations=" << s.expirations
-                << " active_keys=" << s.active_keys
-                << " memory_bytes=" << s.memory_bytes;
-            return oss.str();
-        }
-        case mini_redis::TcpCommandType::Invalid:
-        default:
-            return "ERROR invalid command";
-    }
-}
-
-void handle_client(SocketHandle client, Cache& cache) {
+void handle_client(SocketHandle client, mini_redis::RedisCommandProcessor& processor) {
     std::string buffer;
     buffer.reserve(2048);
 
@@ -163,17 +110,9 @@ void handle_client(SocketHandle client, Cache& cache) {
                 continue;
             }
 
-            const auto parsed = mini_redis::parse_tcp_command(line);
-            bool should_quit = false;
-            std::string response;
-            if (parsed.type == mini_redis::TcpCommandType::Invalid) {
-                if (parsed.error == "empty command") {
-                    continue;
-                }
-                response = "ERROR " + parsed.error;
-            } else {
-                response = execute_command(parsed, cache, should_quit);
-            }
+            const auto response_obj = processor.execute_line(line);
+            std::string response = response_obj.payload;
+            const bool should_quit = response_obj.should_exit;
 
             response.push_back('\n');
             if (!send_all(client, response)) {
@@ -240,7 +179,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    Cache cache(capacity, true);
+    mini_redis::RedisCommandProcessor processor(capacity);
 
     SocketHandle server = socket(AF_INET, SOCK_STREAM, 0);
     if (server == kInvalidSocket) {
@@ -291,7 +230,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        std::thread([client, &cache] { handle_client(client, cache); }).detach();
+        std::thread([client, &processor] { handle_client(client, processor); }).detach();
     }
 
     close_socket(server);

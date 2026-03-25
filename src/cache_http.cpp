@@ -497,7 +497,7 @@ int main(int argc, char** argv) {
             }
 
             const auto ttl = parse_ttl_ms(req);
-            const bool ok = processor.cache().set(req.get_param_value("key"), req.get_param_value("value"), ttl);
+            const bool ok = processor.set(req.get_param_value("key"), req.get_param_value("value"), ttl);
             if (!ok) {
                 res.status = 500;
                 res.set_content(json_err("set failed"), "application/json");
@@ -518,7 +518,7 @@ int main(int argc, char** argv) {
             return;
         }
 
-        const auto value = processor.cache().get(req.get_param_value("key"));
+        const auto value = processor.get(req.get_param_value("key"));
         if (!value.has_value()) {
             res.status = 404;
             res.set_content("{\"ok\":true,\"value\":null}", "application/json");
@@ -535,12 +535,12 @@ int main(int argc, char** argv) {
             return;
         }
 
-        const bool deleted = processor.cache().del(req.get_param_value("key"));
+        const bool deleted = processor.del(req.get_param_value("key"));
         res.set_content(std::string{"{\"ok\":true,\"deleted\":"} + (deleted ? "true}" : "false}"), "application/json");
     });
 
     server.Get("/stats", [&](const httplib::Request&, httplib::Response& res) {
-        const auto s = processor.cache().stats();
+        const auto s = processor.stats();
         std::string payload =
             "{\"ok\":true"
             ",\"hits\":" + std::to_string(s.hits) +

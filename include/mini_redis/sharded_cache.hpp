@@ -64,6 +64,12 @@ public:
     using Clock = std::chrono::steady_clock;
     using TimePoint = Clock::time_point;
 
+    struct SnapshotItem {
+        Key key;
+        Value value;
+        std::optional<std::chrono::milliseconds> ttl_remaining;
+    };
+
     static_assert(NumShards > 0, "NumShards must be greater than zero");
 
     explicit ShardedCache(std::size_t max_keys, bool enable_background_reaper = true)
@@ -262,6 +268,39 @@ public:
 
     [[nodiscard]] std::size_t max_keys() const noexcept {
         return max_keys_;
+    }
+
+    [[nodiscard]] std::vector<SnapshotItem> snapshot_items() const {
+        const auto now = Clock::now();
+        std::vector<SnapshotItem> items;
+        items.reserve(active_key_count());
+
+        for (const auto& shard : shards_) {
+            std::shared_lock lock(shard.mutex);
+            for (const auto& kv : shard.map) {
+                const auto& key = kv.first;
+                const auto& entry = kv.second;
+                if (is_expired(entry, now)) {
+                    continue;
+                }
+
+                SnapshotItem out;
+                out.key = key;
+                out.value = entry.value;
+                if (entry.has_expiry) {
+                    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        entry.expiry - now);
+                    if (remaining.count() <= 0) {
+                        continue;
+                    }
+                    out.ttl_remaining = remaining;
+                }
+
+                items.push_back(std::move(out));
+            }
+        }
+
+        return items;
     }
 
 private:

@@ -22,6 +22,8 @@ This is not just a key-value map. It includes:
 - concurrent sharded architecture
 - LRU eviction
 - TTL expiry
+- async AOF persistence (SET/DEL command log)
+- periodic snapshot persistence (RDB-style dump)
 - thundering-herd protection
 - TCP protocol server
 - HTTP API and visual dashboard
@@ -50,6 +52,11 @@ This is not just a key-value map. It includes:
 - Hit/miss counters and hit ratio.
 - Active keys and memory usage estimate.
 - Benchmark scripts with CSV + PNG graph output.
+
+### Persistence
+- Asynchronous Append Only File (AOF) logging for write commands (`SET`, `DEL`) via background flush thread.
+- Periodic snapshot dump (RDB-style) from safe cache snapshots without full global locking.
+- Startup recovery order: load snapshot first, then replay AOF.
 
 ### Engineering Workflow
 - CMake-based build.
@@ -170,6 +177,10 @@ High-level flow:
 ---
 
 ## 6. How To Run
+
+Persistence files are written under `data/` by default:
+- `data/dump.rdb`
+- `data/appendonly.aof`
 
 ### Local Build (Windows, Visual Studio generator)
 

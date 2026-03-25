@@ -15,13 +15,15 @@ option(ENABLE_CLI "Build Redis-like CLI simulator" ON)
 option(ENABLE_HTTP "Build lightweight HTTP simulator" ON)
 option(ENABLE_TCP "Build TCP command server" ON)
 
-add_library(mini_redis_cache INTERFACE)
-target_include_directories(mini_redis_cache INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_library(mini_redis_cache STATIC
+    src/persistence.cpp
+)
+target_include_directories(mini_redis_cache PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(MSVC)
-    target_compile_options(mini_redis_cache INTERFACE /W4 /permissive-)
+    target_compile_options(mini_redis_cache PRIVATE /W4 /permissive-)
 else()
-    target_compile_options(mini_redis_cache INTERFACE -Wall -Wextra -Wpedantic)
+    target_compile_options(mini_redis_cache PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(cache_demo src/main.cpp)
