@@ -139,19 +139,15 @@ jobs:
             if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             fi
-            mkdir -p /opt/mini-redis-cache
-            if [ ! -x /opt/mini-redis-cache/deploy.sh ]; then
-              mkdir -p /opt/mini-redis-cache
-            fi
+            sudo mkdir -p /opt/mini-redis-cache
             TMP_DIR="/tmp/mini-redis-ops"
             rm -rf "$TMP_DIR"
             mkdir -p "$TMP_DIR"
             tar -xzf /tmp/mini-redis-release.tar.gz -C "$TMP_DIR"
             chmod +x "$TMP_DIR/deploy/ec2/deploy.sh"
-            cp "$TMP_DIR/deploy/ec2/deploy.sh" /opt/mini-redis-cache/deploy.sh
-            chmod +x /opt/mini-redis-cache/deploy.sh
-            HEALTH_URL="http://127.0.0.1/health" /opt/mini-redis-cache/deploy.sh /tmp/mini-redis-release.tar.gz
-
+            sudo cp "$TMP_DIR/deploy/ec2/deploy.sh" /opt/mini-redis-cache/deploy.sh
+            sudo chmod +x /opt/mini-redis-cache/deploy.sh
+            HEALTH_URL="http://127.0.0.1/health" sudo /opt/mini-redis-cache/deploy.sh /tmp/mini-redis-release.tar.gz
       - name: Verify deployment endpoint
         uses: appleboy/ssh-action@v1.2.0
         with:
