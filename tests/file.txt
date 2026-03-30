@@ -1,0 +1,83 @@
+$base='http://13.205.178.239'
+$key = 'e2e_' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$results = @()
+
+function Invoke-Case {
+  param(
+    [string]$Name,
+    [string]$Method,
+    [string]$Path,
+    [int]$ExpectedStatus,
+    [string]$ExpectedContains = '',
+    [string]$Body = ''
+  )
+
+  $url = "$base$Path"
+  $status = -1
+  $content = ''
+  try {
+    if ($Method -eq 'GET') {
+      $resp = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 15 -UseBasicParsing
+    } elseif ($Method -eq 'POST') {
+      if ($Body -ne '') {
+        $resp = Invoke-WebRequest -Uri $url -Method Post -Body $Body -ContentType 'text/plain' -TimeoutSec 15 -UseBasicParsing
+      } else {
+        $resp = Invoke-WebRequest -Uri $url -Method Post -TimeoutSec 15 -UseBasicParsing
+      }
+    } elseif ($Method -eq 'DELETE') {
+      $resp = Invoke-WebRequest -Uri $url -Method Delete -TimeoutSec 15 -UseBasicParsing
+    } else {
+      throw "Unsupported method: $Method"
+    }
+    $status = [int]$resp.StatusCode
+    $content = [string]$resp.Content
+  } catch {
+    if ($_.Exception.Response) {
+      $status = [int]$_.Exception.Response.StatusCode
+      try {
+        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $content = $reader.ReadToEnd()
+        $reader.Close()
+      } catch {
+        $content = $_.Exception.Message
+      }
+    } else {
+      $content = $_.Exception.Message
+    }
+  }
+
+  $pass = ($status -eq $ExpectedStatus)
+  if ($pass -and $ExpectedContains -ne '') {
+    $pass = $content.Contains($ExpectedContains)
+  }
+
+  $results += [PSCustomObject]@{
+    test = $Name
+    method = $Method
+    path = $Path
+    expected = $ExpectedStatus
+    actual = $status
+    pass = $pass
+    sample = ($content -replace "`r|`n", ' ')
+  }
+}
+
+Invoke-Case -Name 'health' -Method 'GET' -Path '/health' -ExpectedStatus 200 -ExpectedContains '"ok":true'
+Invoke-Case -Name 'stats' -Method 'GET' -Path '/stats' -ExpectedStatus 200 -ExpectedContains '"ok":true'
+Invoke-Case -Name 'set with ttl' -Method 'POST' -Path "/set?key=$key&value=v1&ttl_ms=1500" -ExpectedStatus 200 -ExpectedContains '"message":"OK"'
+Invoke-Case -Name 'get existing key' -Method 'GET' -Path "/get?key=$key" -ExpectedStatus 200 -ExpectedContains '"value":"v1"'
+Start-Sleep -Seconds 2
+Invoke-Case -Name 'get expired key' -Method 'GET' -Path "/get?key=$key" -ExpectedStatus 404 -ExpectedContains '"value":null'
+Invoke-Case -Name 'set persistent key' -Method 'POST' -Path "/set?key=$key&value=v2" -ExpectedStatus 200 -ExpectedContains '"message":"OK"'
+Invoke-Case -Name 'delete key' -Method 'DELETE' -Path "/del?key=$key" -ExpectedStatus 200 -ExpectedContains '"deleted":true'
+Invoke-Case -Name 'get deleted key' -Method 'GET' -Path "/get?key=$key" -ExpectedStatus 404 -ExpectedContains '"value":null'
+Invoke-Case -Name 'bad get missing key' -Method 'GET' -Path '/get' -ExpectedStatus 400 -ExpectedContains 'usage: GET /get?key=<k>'
+Invoke-Case -Name 'bad set missing value' -Method 'POST' -Path '/set?key=only' -ExpectedStatus 400 -ExpectedContains 'usage: POST /set?key=<k>&value=<v>'
+Invoke-Case -Name 'cmd ping' -Method 'POST' -Path '/cmd' -Body 'PING' -ExpectedStatus 200 -ExpectedContains 'PONG'
+
+$results | Format-Table -AutoSize
+
+$passed = ($results | Where-Object { $_.pass -eq $true }).Count
+$total = $results.Count
+Write-Output "SUMMARY: $passed/$total passed"
+if ($passed -ne $total) { exit 1 }
