@@ -1,7 +1,6 @@
 services:
   cache_http:
     image: ghcr.io/${GHCR_OWNER:-owner}/${GHCR_IMAGE:-mini-redis-cache}:${IMAGE_TAG:-latest}
-    container_name: mini-redis-cache
     restart: unless-stopped
     command: ["8080", "50000"]
     expose:
@@ -17,10 +16,10 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: mini-redis-nginx
     restart: unless-stopped
     depends_on:
-      - cache_http
+      cache_http:
+        condition: service_healthy
     ports:
       - "80:80"
     volumes:
