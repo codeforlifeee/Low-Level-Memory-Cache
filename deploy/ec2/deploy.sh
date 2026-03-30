@@ -11,6 +11,9 @@ NEW_RELEASE_DIR="${RELEASES_DIR}/${TIMESTAMP}"
 PACKAGE_PATH="${1:-/tmp/mini-redis-release.tar.gz}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-15}"
+TLS_DOMAIN="${TLS_DOMAIN:-}"
+CERTBOT_CONF_DIR="${CERTBOT_CONF_DIR:-/opt/${APP_NAME}/shared/certbot/conf}"
+CERTBOT_WWW_DIR="${CERTBOT_WWW_DIR:-/opt/${APP_NAME}/shared/certbot/www}"
 
 ensure_port_80_available() {
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
@@ -32,6 +35,29 @@ ensure_port_80_available() {
       return 1
     fi
   fi
+}
+
+render_nginx_config() {
+  local nginx_dir="${CURRENT_LINK}/deploy/nginx"
+  local active_conf="${nginx_dir}/default.conf"
+  local http_conf="${nginx_dir}/default.http.conf"
+  local https_template="${nginx_dir}/default.https.conf.template"
+
+  mkdir -p "${CERTBOT_CONF_DIR}" "${CERTBOT_WWW_DIR}"
+
+  if [[ -n "${TLS_DOMAIN}" ]] && \
+     [[ -f "${CERTBOT_CONF_DIR}/live/${TLS_DOMAIN}/fullchain.pem" ]] && \
+     [[ -f "${CERTBOT_CONF_DIR}/live/${TLS_DOMAIN}/privkey.pem" ]]; then
+    echo "TLS certificate detected for ${TLS_DOMAIN}; enabling HTTPS nginx config"
+    sed "s|__TLS_DOMAIN__|${TLS_DOMAIN}|g" "${https_template}" > "${active_conf}"
+    return 0
+  fi
+
+  if [[ -n "${TLS_DOMAIN}" ]]; then
+    echo "TLS_DOMAIN is set but certificate files were not found for ${TLS_DOMAIN}; serving HTTP until certs exist"
+  fi
+
+  cp "${http_conf}" "${active_conf}"
 }
 
 rollback() {
@@ -72,6 +98,8 @@ if [[ -f ".env" ]]; then
   source .env
   set +a
 fi
+
+render_nginx_config
 
 ensure_port_80_available
 

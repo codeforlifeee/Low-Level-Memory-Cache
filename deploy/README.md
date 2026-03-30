@@ -56,6 +56,7 @@ Add these repository secrets:
 - `EC2_SSH_KEY`: private key content for the EC2 key pair
 - `GHCR_USERNAME` (optional): username for GHCR pull auth on EC2
 - `GHCR_TOKEN` (optional): GHCR token with package read permission
+- `TLS_DOMAIN` (optional): domain to enable HTTPS automatically once cert files exist
 
 ## 6) CI/CD Flow
 
@@ -78,4 +79,23 @@ curl "http://<ec2-ip>/get?key=user:1"
 
 ## 8) Optional HTTPS
 
-Use Certbot on host Nginx or terminate TLS in front (ALB/CloudFront). Keep app service on internal network only.
+This repo now supports HTTPS with Let's Encrypt while keeping deployment health checks on HTTP.
+
+1. Point your DNS `A` record to your EC2 Elastic IP.
+2. Set `TLS_DOMAIN` in GitHub Actions secrets (for example `api.example.com`).
+3. Deploy once so HTTP stack is live.
+4. SSH into EC2 and run:
+
+```bash
+cd /opt/mini-redis-cache/current
+chmod +x deploy/ec2/issue_tls_cert.sh
+./deploy/ec2/issue_tls_cert.sh <your-domain> <your-email>
+```
+
+5. Re-run the deploy workflow. `deploy.sh` will detect cert files and auto-render HTTPS nginx config.
+
+Certificate storage is persistent across releases:
+- `/opt/mini-redis-cache/shared/certbot/conf`
+- `/opt/mini-redis-cache/shared/certbot/www`
+
+If certificate files are missing, deployment safely falls back to HTTP so rollback/health checks continue to work.

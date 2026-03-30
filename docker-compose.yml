@@ -24,6 +24,8 @@ services:
       - "80:80"
     volumes:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${CERTBOT_CONF_DIR:-/opt/mini-redis-cache/shared/certbot/conf}:/etc/letsencrypt:ro
+      - ${CERTBOT_WWW_DIR:-/opt/mini-redis-cache/shared/certbot/www}:/var/www/certbot:ro
     networks:
       - cache_net
 

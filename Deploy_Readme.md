@@ -329,6 +329,10 @@ curl -v http://127.0.0.1/health
 
 Then fix config and redeploy.
 
+Important:
+- Keep `deploy/nginx/default.conf` HTTP-first for CI health checks.
+- Do not switch to HTTPS-only config before certificates are available under `/opt/mini-redis-cache/shared/certbot/conf/live/<domain>/`.
+
 ### Problem E: Deploy fails with `address already in use` on `0.0.0.0:80`
 
 Cause:
@@ -360,13 +364,22 @@ Checks:
 
 After HTTP deployment is stable:
 
-1. Buy domain (Route53 or external registrar).
-2. Create `A` record to EC2 Elastic IP.
-3. Choose one HTTPS path:
-   - Certbot on EC2 host Nginx, or
-   - AWS ALB + ACM certificate (recommended production style)
+1. Create an `A` record from your domain to EC2 Elastic IP.
+2. Add GitHub secret `TLS_DOMAIN` with your domain.
+3. Deploy once (keeps HTTP active).
+4. SSH to EC2 and run:
 
-Do this only after base deployment is fully stable.
+```bash
+cd /opt/mini-redis-cache/current
+chmod +x deploy/ec2/issue_tls_cert.sh
+./deploy/ec2/issue_tls_cert.sh <your-domain> <your-email>
+```
+
+5. Re-run GitHub Actions deploy. The release script auto-detects cert files and enables HTTPS config.
+
+Persistent cert paths used by compose:
+- `/opt/mini-redis-cache/shared/certbot/conf`
+- `/opt/mini-redis-cache/shared/certbot/www`
 
 ---
 

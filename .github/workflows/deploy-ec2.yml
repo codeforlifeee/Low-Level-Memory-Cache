@@ -55,6 +55,9 @@ jobs:
           GHCR_OWNER=${{ github.repository_owner }}
           GHCR_IMAGE=mini-redis-cache
           IMAGE_TAG=${{ github.sha }}
+          TLS_DOMAIN=${{ secrets.TLS_DOMAIN }}
+          CERTBOT_CONF_DIR=/opt/mini-redis-cache/shared/certbot/conf
+          CERTBOT_WWW_DIR=/opt/mini-redis-cache/shared/certbot/www
           EOF
           tar -czf mini-redis-release.tar.gz -C bundle .
 
