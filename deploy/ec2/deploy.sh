@@ -17,16 +17,27 @@ CERTBOT_WWW_DIR="${CERTBOT_WWW_DIR:-/opt/${APP_NAME}/shared/certbot/www}"
 
 is_docker_port_80_listener_only() {
   local listeners="${1:-}"
+  local data_lines=""
 
   if [[ -z "${listeners}" ]]; then
     return 1
   fi
 
-  if ! echo "${listeners}" | grep -qiE 'docker-proxy|docker-pr'; then
+  data_lines="$(
+    echo "${listeners}" | \
+      sed '/^[[:space:]]*$/d' | \
+      grep -viE '^(COMMAND|STATE|NETID)[[:space:]]' || true
+  )"
+
+  if [[ -z "${data_lines}" ]]; then
     return 1
   fi
 
-  if echo "${listeners}" | grep -qviE 'docker-proxy|docker-pr'; then
+  if ! echo "${data_lines}" | grep -qiE 'docker-proxy|docker-pr'; then
+    return 1
+  fi
+
+  if echo "${data_lines}" | grep -qviE 'docker-proxy|docker-pr'; then
     return 1
   fi
 
