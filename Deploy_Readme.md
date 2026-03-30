@@ -55,7 +55,9 @@ Before you start, confirm all of these:
 5. Key pair:
    - Select existing key pair, or create new key pair and download `.pem`.
 6. Network settings:
-   - Allow SSH (port 22) from your IP only.
+   - Allow SSH (port 22) from your IP for local terminal access.
+   - If you use GitHub-hosted runners for deploy, port 22 must also be reachable from the runner. For first deploy, temporarily allow `0.0.0.0/0` and keep key-based auth only.
+   - Safer long-term option: use a self-hosted runner (inside your VPC) and then lock SSH back to trusted sources.
    - Add HTTP (port 80) from Anywhere (`0.0.0.0/0`).
    - Do not open port 8080 publicly (not required).
 7. Storage: 20 GB gp3 is enough.
@@ -139,11 +141,15 @@ Add these required secrets:
 3. `EC2_SSH_KEY`
    - Value: full private key content (the `.pem` content)
 
+Optional:
+4. `EC2_PORT`
+   - Value: `22` (or your custom SSH port)
+
 Add these optional secrets (needed if GHCR package is private):
 
-4. `GHCR_USERNAME`
+5. `GHCR_USERNAME`
    - Your GitHub username
-5. `GHCR_TOKEN`
+6. `GHCR_TOKEN`
    - A token with package read permission
 
 If image pull fails on EC2, set optional GHCR secrets immediately.
@@ -287,6 +293,16 @@ Checks:
 1. `EC2_HOST` secret correct.
 2. `EC2_USER` is `ubuntu`.
 3. `EC2_SSH_KEY` has full key content including BEGIN/END lines.
+4. Security group inbound rule allows SSH from GitHub runner path (if hosted runner, `0.0.0.0/0` is the usual first-debug setting).
+5. NACL/firewall is not blocking port 22.
+
+Typical error:
+- `dial tcp <host>:22: i/o timeout` means the runner cannot reach EC2 over network (not an SSH key format issue).
+
+Fast fix path:
+1. Temporarily open inbound 22 to `0.0.0.0/0`.
+2. Re-run deploy workflow.
+3. After success, move to self-hosted runner or tighten allowed sources for SSH.
 
 ### Problem C: Docker image pull fails on EC2
 
@@ -352,7 +368,7 @@ Use quantified bullets in resume:
 
 ## 16. Final Quick Runbook (Short Version)
 
-1. Launch EC2 + Elastic IP + security group (22 from your IP, 80 public).
+1. Launch EC2 + Elastic IP + security group (80 public, and 22 reachable from wherever your deploy runner connects). 
 2. SSH into EC2.
 3. Clone repo.
 4. Run `deploy/ec2/bootstrap.sh`.
