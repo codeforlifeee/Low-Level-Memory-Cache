@@ -376,6 +376,13 @@ curl -I http://low-level-cache-tejas.duckdns.org/health
    - inbound `80` from `0.0.0.0/0`
    - inbound `443` from `0.0.0.0/0`
 
+   Also confirm compose publishes both ports on EC2:
+
+```bash
+cd /opt/mini-redis-cache/current
+grep -n "443:443" docker-compose.yml
+```
+
 3. Add GitHub Actions secret:
    - `TLS_DOMAIN=low-level-cache-tejas.duckdns.org`
 
@@ -404,6 +411,7 @@ ls -la /opt/mini-redis-cache/shared/certbot/conf/live/low-level-cache-tejas.duck
 ```bash
 curl -Iv https://low-level-cache-tejas.duckdns.org/health
 openssl s_client -connect low-level-cache-tejas.duckdns.org:443 -servername low-level-cache-tejas.duckdns.org </dev/null | openssl x509 -noout -subject -issuer -dates
+docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep nginx
 ```
 
 9. If browser still shows "Not Secure", check these in order:
