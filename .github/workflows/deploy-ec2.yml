@@ -78,12 +78,37 @@ jobs:
       - name: Preflight SSH reachability
         run: |
           EC2_PORT="${{ secrets.EC2_PORT != '' && secrets.EC2_PORT || '22' }}"
-          if timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.EC2_HOST }}/${EC2_PORT}"; then
-            echo "SSH port reachable on ${{ secrets.EC2_HOST }}:${EC2_PORT}"
-          else
-            echo "::error::Cannot reach ${{ secrets.EC2_HOST }}:${EC2_PORT}. Check EC2 security group, NACL, and host firewall."
+          RAW_HOST='${{ secrets.EC2_HOST }}'
+          HOST="${RAW_HOST#http://}"
+          HOST="${HOST#https://}"
+          HOST="${HOST%%/*}"
+
+          if [ -z "$HOST" ]; then
+            echo "::error::EC2_HOST is empty or invalid. Use only IP/DNS (no protocol or path)."
             exit 1
           fi
+
+          export HOST EC2_PORT
+          python3 - <<'PY'
+          import os
+          import socket
+          import sys
+
+          host = os.environ["HOST"].strip()
+          port = int(os.environ["EC2_PORT"])
+          timeout_s = 8
+
+          try:
+              with socket.create_connection((host, port), timeout=timeout_s):
+                  print(f"SSH port reachable on {host}:{port}")
+          except Exception as exc:
+              print(
+                  f"::error::Cannot reach {host}:{port}. "
+                  f"Check EC2 security group, NACL, host firewall, and EC2_HOST format. "
+                  f"Details: {exc}"
+              )
+              sys.exit(1)
+          PY
 
       - name: Copy bundle to EC2
         uses: appleboy/scp-action@v0.1.7

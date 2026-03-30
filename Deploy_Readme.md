@@ -135,7 +135,9 @@ Go to GitHub -> Your Repo -> Settings -> Secrets and variables -> Actions -> New
 Add these required secrets:
 
 1. `EC2_HOST`
-   - Value: your EC2 public IP or public DNS
+   - Value: your EC2 public IP or public DNS only
+   - Do not include protocol like `http://` or `https://`
+   - Do not include path or trailing slash
 2. `EC2_USER`
    - Value: `ubuntu`
 3. `EC2_SSH_KEY`
@@ -291,6 +293,7 @@ Checks:
 
 Checks:
 1. `EC2_HOST` secret correct.
+   - Must be host only (for example `1.2.3.4` or `ec2-xx-xx-xx-xx.compute-1.amazonaws.com`), not a URL.
 2. `EC2_USER` is `ubuntu`.
 3. `EC2_SSH_KEY` has full key content including BEGIN/END lines.
 4. Security group inbound rule allows SSH from GitHub runner path (if hosted runner, `0.0.0.0/0` is the usual first-debug setting).
