@@ -12,6 +12,28 @@ PACKAGE_PATH="${1:-/tmp/mini-redis-release.tar.gz}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-15}"
 
+ensure_port_80_available() {
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
+    echo "Host nginx is active on this machine. Stopping it so containerized nginx can use port 80."
+    sudo systemctl stop nginx || true
+    sudo systemctl disable nginx || true
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    if lsof -iTCP:80 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+      echo "Port 80 is already in use by another process."
+      lsof -iTCP:80 -sTCP:LISTEN -n -P || true
+      return 1
+    fi
+  elif command -v ss >/dev/null 2>&1; then
+    if ss -ltn sport = :80 | tail -n +2 | grep -q "."; then
+      echo "Port 80 is already in use by another process."
+      ss -ltnp sport = :80 || true
+      return 1
+    fi
+  fi
+}
+
 rollback() {
   echo "Deployment failed. Rolling back..."
 
@@ -50,6 +72,8 @@ if [[ -f ".env" ]]; then
   source .env
   set +a
 fi
+
+ensure_port_80_available
 
 docker compose pull
 

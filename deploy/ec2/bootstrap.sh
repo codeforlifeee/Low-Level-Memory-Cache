@@ -2,7 +2,13 @@
 set -euo pipefail
 
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release nginx
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
+
+# If host nginx is present from an earlier setup, stop it so the containerized nginx can bind :80.
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files nginx.service >/dev/null 2>&1; then
+  sudo systemctl stop nginx || true
+  sudo systemctl disable nginx || true
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   sudo install -m 0755 -d /etc/apt/keyrings

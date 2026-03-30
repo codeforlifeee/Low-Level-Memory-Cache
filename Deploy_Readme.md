@@ -329,7 +329,25 @@ curl -v http://127.0.0.1/health
 
 Then fix config and redeploy.
 
-### Problem E: Port 80 not reachable publicly
+### Problem E: Deploy fails with `address already in use` on `0.0.0.0:80`
+
+Cause:
+- Host nginx (installed on EC2 OS) is already listening on port 80, so docker nginx cannot bind it.
+
+One-time recovery on EC2:
+
+```bash
+sudo systemctl stop nginx
+sudo systemctl disable nginx
+sudo lsof -iTCP:80 -sTCP:LISTEN -n -P
+```
+
+Then rerun GitHub Actions deploy.
+
+Notes:
+- New bootstrap/deploy scripts now handle this automatically, but existing instances may need this one-time cleanup.
+
+### Problem F: Port 80 not reachable publicly
 
 Checks:
 1. EC2 security group has inbound HTTP 80 from 0.0.0.0/0.

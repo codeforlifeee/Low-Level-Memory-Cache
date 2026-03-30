@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   cache_http:
     image: ghcr.io/${GHCR_OWNER:-owner}/${GHCR_IMAGE:-mini-redis-cache}:${IMAGE_TAG:-latest}
