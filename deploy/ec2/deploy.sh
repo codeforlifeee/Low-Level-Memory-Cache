@@ -15,7 +15,27 @@ TLS_DOMAIN="${TLS_DOMAIN:-}"
 CERTBOT_CONF_DIR="${CERTBOT_CONF_DIR:-/opt/${APP_NAME}/shared/certbot/conf}"
 CERTBOT_WWW_DIR="${CERTBOT_WWW_DIR:-/opt/${APP_NAME}/shared/certbot/www}"
 
+is_docker_port_80_listener_only() {
+  local listeners="${1:-}"
+
+  if [[ -z "${listeners}" ]]; then
+    return 1
+  fi
+
+  if ! echo "${listeners}" | grep -qiE 'docker-proxy|docker-pr'; then
+    return 1
+  fi
+
+  if echo "${listeners}" | grep -qviE 'docker-proxy|docker-pr'; then
+    return 1
+  fi
+
+  return 0
+}
+
 ensure_port_80_available() {
+  local listeners=""
+
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
     echo "Host nginx is active on this machine. Stopping it so containerized nginx can use port 80."
     sudo systemctl stop nginx || true
@@ -23,14 +43,26 @@ ensure_port_80_available() {
   fi
 
   if command -v lsof >/dev/null 2>&1; then
-    if lsof -iTCP:80 -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-      echo "Port 80 is already in use by another process."
-      lsof -iTCP:80 -sTCP:LISTEN -n -P || true
+    listeners="$(lsof -iTCP:80 -sTCP:LISTEN -n -P 2>/dev/null || true)"
+    if [[ -n "${listeners}" ]]; then
+      if is_docker_port_80_listener_only "${listeners}"; then
+        echo "Port 80 is currently owned by an existing Docker proxy; proceeding with rolling compose update."
+        return 0
+      fi
+
+      echo "Port 80 is already in use by a non-Docker process."
+      echo "${listeners}"
       return 1
     fi
   elif command -v ss >/dev/null 2>&1; then
-    if ss -ltn sport = :80 | tail -n +2 | grep -q "."; then
-      echo "Port 80 is already in use by another process."
+    listeners="$(ss -ltnp sport = :80 2>/dev/null | tail -n +2 || true)"
+    if [[ -n "${listeners}" ]]; then
+      if is_docker_port_80_listener_only "${listeners}"; then
+        echo "Port 80 is currently owned by an existing Docker proxy; proceeding with rolling compose update."
+        return 0
+      fi
+
+      echo "Port 80 is already in use by a non-Docker process."
       ss -ltnp sport = :80 || true
       return 1
     fi

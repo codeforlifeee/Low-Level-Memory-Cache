@@ -350,6 +350,7 @@ Then rerun GitHub Actions deploy.
 
 Notes:
 - New bootstrap/deploy scripts now handle this automatically, but existing instances may need this one-time cleanup.
+- If port 80 is owned by `docker-proxy` during deploy, that is expected from the currently running release and the script will continue.
 
 ### Problem F: Port 80 not reachable publicly
 
@@ -360,22 +361,69 @@ Checks:
 
 ---
 
-## 14. Optional Domain + HTTPS (Later)
+## 14. Certbot HTTPS (Step-by-Step)
 
-After HTTP deployment is stable:
+Use this sequence exactly for `low-level-cache-tejas.duckdns.org`.
 
-1. Create an `A` record from your domain to EC2 Elastic IP.
-2. Add GitHub secret `TLS_DOMAIN` with your domain.
-3. Deploy once (keeps HTTP active).
-4. SSH to EC2 and run:
+1. Confirm DNS is pointing to your EC2 Elastic IP.
+
+```bash
+dig +short low-level-cache-tejas.duckdns.org
+curl -I http://low-level-cache-tejas.duckdns.org/health
+```
+
+2. Confirm EC2 security group allows both:
+   - inbound `80` from `0.0.0.0/0`
+   - inbound `443` from `0.0.0.0/0`
+
+3. Add GitHub Actions secret:
+   - `TLS_DOMAIN=low-level-cache-tejas.duckdns.org`
+
+4. Run one normal deploy workflow first.
+   - This keeps HTTP active and prepares the ACME challenge route.
+
+5. SSH into EC2 and issue the certificate with the helper script:
 
 ```bash
 cd /opt/mini-redis-cache/current
 chmod +x deploy/ec2/issue_tls_cert.sh
-./deploy/ec2/issue_tls_cert.sh <your-domain> <your-email>
+./deploy/ec2/issue_tls_cert.sh low-level-cache-tejas.duckdns.org <your-email>
 ```
 
-5. Re-run GitHub Actions deploy. The release script auto-detects cert files and enables HTTPS config.
+6. Confirm certificate files were created:
+
+```bash
+ls -la /opt/mini-redis-cache/shared/certbot/conf/live/low-level-cache-tejas.duckdns.org/
+```
+
+7. Re-run GitHub Actions deploy.
+   - `deploy.sh` auto-detects cert files and switches nginx to HTTPS config.
+
+8. Verify HTTPS certificate and endpoint:
+
+```bash
+curl -Iv https://low-level-cache-tejas.duckdns.org/health
+openssl s_client -connect low-level-cache-tejas.duckdns.org:443 -servername low-level-cache-tejas.duckdns.org </dev/null | openssl x509 -noout -subject -issuer -dates
+```
+
+9. If browser still shows "Not Secure", check these in order:
+   - open the exact URL with `https://` (not `http://`)
+   - do not access by raw IP address
+   - hard refresh or test in incognito/private window
+   - open DevTools Console and verify no mixed-content warnings
+   - verify system date/time on your machine is correct
+
+10. Configure renewal (recommended):
+
+```bash
+sudo crontab -e
+```
+
+Add this line:
+
+```cron
+15 3 * * * cd /opt/mini-redis-cache/current && docker run --rm -v /opt/mini-redis-cache/shared/certbot/conf:/etc/letsencrypt -v /opt/mini-redis-cache/shared/certbot/www:/var/www/certbot certbot/certbot:v2.11.0 renew --webroot -w /var/www/certbot && docker compose up -d nginx >/dev/null 2>&1
+```
 
 Persistent cert paths used by compose:
 - `/opt/mini-redis-cache/shared/certbot/conf`
