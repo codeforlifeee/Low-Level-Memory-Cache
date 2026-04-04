@@ -5,6 +5,8 @@ services:
     command: ["8080", "50000"]
     expose:
       - "8080"
+    volumes:
+      - ${CACHE_DATA_DIR:-/opt/mini-redis-cache/shared/cache-data}:/opt/mini-redis/data
     networks:
       - cache_net
     healthcheck:

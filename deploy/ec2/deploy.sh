@@ -14,6 +14,7 @@ HEALTH_RETRIES="${HEALTH_RETRIES:-15}"
 TLS_DOMAIN="${TLS_DOMAIN:-}"
 CERTBOT_CONF_DIR="${CERTBOT_CONF_DIR:-/opt/${APP_NAME}/shared/certbot/conf}"
 CERTBOT_WWW_DIR="${CERTBOT_WWW_DIR:-/opt/${APP_NAME}/shared/certbot/www}"
+CACHE_DATA_DIR="${CACHE_DATA_DIR:-/opt/${APP_NAME}/shared/cache-data}"
 TLS_CERT_PRESENT="false"
 
 is_docker_port_80_listener_only() {
@@ -87,7 +88,7 @@ render_nginx_config() {
   local http_conf="${nginx_dir}/default.http.conf"
   local https_template="${nginx_dir}/default.https.conf.template"
 
-  mkdir -p "${CERTBOT_CONF_DIR}" "${CERTBOT_WWW_DIR}"
+  mkdir -p "${CERTBOT_CONF_DIR}" "${CERTBOT_WWW_DIR}" "${CACHE_DATA_DIR}"
 
   if [[ -n "${TLS_DOMAIN}" ]] && \
      [[ -f "${CERTBOT_CONF_DIR}/live/${TLS_DOMAIN}/fullchain.pem" ]] && \

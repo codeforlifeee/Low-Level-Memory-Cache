@@ -58,6 +58,7 @@ jobs:
           TLS_DOMAIN=${{ secrets.TLS_DOMAIN }}
           CERTBOT_CONF_DIR=/opt/mini-redis-cache/shared/certbot/conf
           CERTBOT_WWW_DIR=/opt/mini-redis-cache/shared/certbot/www
+          CACHE_DATA_DIR=/opt/mini-redis-cache/shared/cache-data
           EOF
           tar -czf mini-redis-release.tar.gz -C bundle .
 

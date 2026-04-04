@@ -470,3 +470,29 @@ Use quantified bullets in resume:
 10. If failure occurs, inspect logs and rerun.
 
 You are now deployed with CI/CD and automatic rollback.
+
+---
+
+## 17. Data Persistence Across Restart/Deploy
+
+Cache data is now persisted on host storage and survives container recreation:
+- `/opt/mini-redis-cache/shared/cache-data`
+
+This means value `1 -> A` should remain after:
+1. EC2 stop/start on the same instance
+2. New deployment that recreates containers
+
+Quick validation:
+
+```bash
+curl -X POST "http://<EC2_PUBLIC_IP>/set?key=1&value=A"
+curl "http://<EC2_PUBLIC_IP>/get?key=1"
+```
+
+Then restart EC2 or rerun deploy and call:
+
+```bash
+curl "http://<EC2_PUBLIC_IP>/get?key=1"
+```
+
+Expected: still returns `A`.

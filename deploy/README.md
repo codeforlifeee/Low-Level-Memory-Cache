@@ -77,6 +77,18 @@ curl -X POST "http://<ec2-ip>/set?key=user:1&value=alice&ttl_ms=5000"
 curl "http://<ec2-ip>/get?key=user:1"
 ```
 
+Cache persistence location (survives container recreation and deployment rollouts):
+- `/opt/mini-redis-cache/shared/cache-data`
+
+Quick persistence check:
+
+```bash
+curl -X POST "http://<ec2-ip>/set?key=1&value=A"
+curl "http://<ec2-ip>/get?key=1"
+```
+
+After restarting EC2 or rerunning deploy, `GET key=1` should still return `A`.
+
 ## 8) Optional HTTPS
 
 This repo now supports HTTPS with Let's Encrypt while keeping deployment health checks on HTTP.
