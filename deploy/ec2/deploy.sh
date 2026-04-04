@@ -14,6 +14,7 @@ HEALTH_RETRIES="${HEALTH_RETRIES:-15}"
 TLS_DOMAIN="${TLS_DOMAIN:-}"
 CERTBOT_CONF_DIR="${CERTBOT_CONF_DIR:-/opt/${APP_NAME}/shared/certbot/conf}"
 CERTBOT_WWW_DIR="${CERTBOT_WWW_DIR:-/opt/${APP_NAME}/shared/certbot/www}"
+TLS_CERT_PRESENT="false"
 
 is_docker_port_80_listener_only() {
   local listeners="${1:-}"
@@ -91,6 +92,7 @@ render_nginx_config() {
   if [[ -n "${TLS_DOMAIN}" ]] && \
      [[ -f "${CERTBOT_CONF_DIR}/live/${TLS_DOMAIN}/fullchain.pem" ]] && \
      [[ -f "${CERTBOT_CONF_DIR}/live/${TLS_DOMAIN}/privkey.pem" ]]; then
+    TLS_CERT_PRESENT="true"
     echo "TLS certificate detected for ${TLS_DOMAIN}; enabling HTTPS nginx config"
     sed "s|__TLS_DOMAIN__|${TLS_DOMAIN}|g" "${https_template}" > "${active_conf}"
     return 0
@@ -101,6 +103,32 @@ render_nginx_config() {
   fi
 
   cp "${http_conf}" "${active_conf}"
+}
+
+check_health_endpoints() {
+  if curl -fsS --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "${HEALTH_URL}" == "http://127.0.0.1/health" ]] && \
+     curl -fsS --max-time 3 "http://localhost/health" >/dev/null 2>&1; then
+    echo "Health check passed via http://localhost/health"
+    return 0
+  fi
+
+  if [[ "${TLS_CERT_PRESENT}" == "true" ]]; then
+    if curl -kfsS --max-time 3 "https://127.0.0.1/health" >/dev/null 2>&1; then
+      echo "Health check passed via https://127.0.0.1/health"
+      return 0
+    fi
+
+    if curl -kfsS --max-time 3 "https://localhost/health" >/dev/null 2>&1; then
+      echo "Health check passed via https://localhost/health"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 rollback() {
@@ -152,7 +180,7 @@ docker compose up -d --remove-orphans
 
 echo "Checking health at ${HEALTH_URL}"
 for _ in $(seq 1 "${HEALTH_RETRIES}"); do
-  if curl -fsS "${HEALTH_URL}" >/dev/null; then
+  if check_health_endpoints; then
     echo "Deployment successful"
     trap - ERR
     exit 0
@@ -161,4 +189,6 @@ for _ in $(seq 1 "${HEALTH_RETRIES}"); do
 done
 
 echo "Health check failed"
+docker compose ps || true
+docker compose logs --tail=120 nginx || true
 exit 1

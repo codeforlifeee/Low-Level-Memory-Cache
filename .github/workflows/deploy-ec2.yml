@@ -161,4 +161,17 @@ jobs:
           timeout: 120s
           command_timeout: 2m
           script: |
-            curl -fsS http://127.0.0.1/health
+            set -euo pipefail
+            if curl -fsS http://127.0.0.1/health >/dev/null || \
+               curl -fsS http://localhost/health >/dev/null || \
+               curl -kfsS https://127.0.0.1/health >/dev/null || \
+               curl -kfsS https://localhost/health >/dev/null; then
+              echo "Post-deploy health verification passed"
+              exit 0
+            fi
+
+            echo "Post-deploy health verification failed"
+            cd /opt/mini-redis-cache/current
+            docker compose ps || true
+            docker compose logs --tail=120 nginx || true
+            exit 1
