@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: low-level-memory-cache
+    env: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PORT
+        value: 8080
